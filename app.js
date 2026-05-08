@@ -3,7 +3,7 @@
    ============================================================ */
 
 // ─── CONFIG (loaded from localStorage → config.js fallback → hardcoded fallback) ─────────
-let GNEWS_API_KEY = localStorage.getItem('GNEWS_API_KEY') || (window.CONFIG && window.CONFIG.GNEWS_API_KEY) || 'c6fdfc2da225ed1a4545d793012e8011';
+let NEWSDATA_API_KEY = localStorage.getItem('NEWSDATA_API_KEY') || (window.CONFIG && window.CONFIG.NEWSDATA_API_KEY) || 'pub_caa9fefb97c8428294d190bf527f72a8';
 let HF_API_KEY    = localStorage.getItem('HF_API_KEY') || (window.CONFIG && window.CONFIG.HF_API_KEY) || ('hf_' + 'GzGYGnLaLt' + 'wHCMslQqBvUy' + 'SaqOUieeDPOw');
 let HF_MODEL      = (window.CONFIG && window.CONFIG.HF_MODEL) || 'mistralai/Mistral-7B-Instruct-v0.2';
 
@@ -78,7 +78,7 @@ const gnewsKeyInput = document.getElementById('gnews-key-input');
 const hfKeyInput = document.getElementById('hf-key-input');
 
 function openSettings() {
-  gnewsKeyInput.value = GNEWS_API_KEY;
+  gnewsKeyInput.value = NEWSDATA_API_KEY;
   hfKeyInput.value = HF_API_KEY;
   settingsModal.classList.remove('hidden');
 }
@@ -92,8 +92,8 @@ function saveSettings() {
   const hkey = hfKeyInput.value.trim();
   
   if (gkey) {
-    localStorage.setItem('GNEWS_API_KEY', gkey);
-    GNEWS_API_KEY = gkey;
+    localStorage.setItem('NEWSDATA_API_KEY', gkey);
+    NEWSDATA_API_KEY = gkey;
   }
   if (hkey) {
     localStorage.setItem('HF_API_KEY', hkey);
@@ -104,7 +104,7 @@ function saveSettings() {
   toast('Settings saved successfully!', 'success');
   
   // Optionally re-fetch news if we just added the key
-  if (GNEWS_API_KEY && allArticles.length === 0) fetchNews();
+  if (NEWSDATA_API_KEY && allArticles.length === 0) fetchNews();
 }
 
 settingsBtn.addEventListener('click', openSettings);
@@ -501,20 +501,20 @@ async function fetchNews() {
   list.innerHTML = '';
 
   try {
-    // Single request to public CORS-friendly NewsAPI mirror
-    const url = `https://saurav.tech/NewsAPI/top-headlines/category/general/us.json`;
+    // Fetch from NewsData.io per user request
+    const url = `https://newsdata.io/api/1/latest?apikey=${NEWSDATA_API_KEY}&language=en`;
     const r = await fetch(url);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const d = await r.json();
-    const articles = (d.articles || []).map(a => ({ 
+    const articles = (d.results || []).map(a => ({ 
       title: a.title,
       description: a.description,
-      content: a.content,
-      url: a.url,
-      image: a.urlToImage,
-      publishedAt: a.publishedAt,
-      source: { name: a.source.name },
-      _category: classifyArticle(a)
+      content: a.content || a.description,
+      url: a.link,
+      image: a.image_url,
+      publishedAt: a.pubDate,
+      source: { name: (a.source_id) || 'News' },
+      _category: classifyArticle({ title: a.title, description: a.description })
     }));
     if (!articles.length) throw new Error('No articles returned');
 
@@ -798,7 +798,7 @@ ${dashCtx}`;
 // ─── INIT ─────────────────────────────────────────────────────
 async function init() {
   // Show settings automatically if keys are missing
-  if (!GNEWS_API_KEY || !HF_API_KEY) {
+  if (!NEWSDATA_API_KEY || !HF_API_KEY) {
     openSettings();
   }
 
@@ -813,7 +813,7 @@ async function init() {
   issInterval = setInterval(fetchISS, ISS_POLL_MS);
 
   // News
-  if (GNEWS_API_KEY) {
+  if (NEWSDATA_API_KEY) {
     await fetchNews();
   }
 
