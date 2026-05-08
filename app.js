@@ -7,16 +7,15 @@ let GNEWS_API_KEY = localStorage.getItem('GNEWS_API_KEY') || (window.CONFIG && w
 let HF_API_KEY    = localStorage.getItem('HF_API_KEY') || (window.CONFIG && window.CONFIG.HF_API_KEY) || ('hf_' + 'GzGYGnLaLt' + 'wHCMslQqBvUy' + 'SaqOUieeDPOw');
 let HF_MODEL      = (window.CONFIG && window.CONFIG.HF_MODEL) || 'mistralai/Mistral-7B-Instruct-v0.2';
 
-// ISS API — ordered by reliability & CORS support
-// open-notify via allorigins returns fresh lat/lng each call
+// ISS API — wheretheiss.at supports HTTPS and CORS natively. 
+// Rate limit is 350 requests per 5 minutes.
 const ISS_APIS = [
-  'https://api.wheretheiss.at/v1/satellites/25544',
-  'https://api.allorigins.win/raw?url=' + encodeURIComponent('http://api.open-notify.org/iss-now.json'),
-  'https://corsproxy.io/?' + encodeURIComponent('http://api.open-notify.org/iss-now.json')
+  'https://api.wheretheiss.at/v1/satellites/25544'
 ];
+
+// Astronauts API — reliable HTTPS endpoint
 const ASTROS_APIS = [
-  'https://api.allorigins.win/raw?url=' + encodeURIComponent('http://api.open-notify.org/astros.json'),
-  'https://corsproxy.io/?' + encodeURIComponent('http://api.open-notify.org/astros.json')
+  'https://corquaid.github.io/international-space-station-APIs/JSON/people-in-space.json'
 ];
 
 const NEWS_CACHE_KEY  = 'iss_news_cache';
@@ -196,26 +195,12 @@ async function getNearestPlace(lat, lng) {
 }
 
 async function fetchISSWithFallback() {
-  const ts = Date.now();
-  // Append cache-busting timestamp to proxies to ensure fresh coordinates
-  const dynamicApis = [
-    'https://api.wheretheiss.at/v1/satellites/25544',
-    `https://api.allorigins.win/raw?url=${encodeURIComponent('http://api.open-notify.org/iss-now.json?t=' + ts)}`,
-    `https://corsproxy.io/?${encodeURIComponent('http://api.open-notify.org/iss-now.json?t=' + ts)}`
-  ];
-  for (const url of dynamicApis) {
+  for (const url of ISS_APIS) {
     try {
       const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
       if (!r.ok) continue;
       const d = await r.json();
-      // Normalize both API response formats
-      if (d.latitude !== undefined) {
-        // wheretheiss.at format
-        return { lat: parseFloat(d.latitude), lng: parseFloat(d.longitude), velocity: d.velocity };
-      } else if (d.iss_position) {
-        // open-notify format
-        return { lat: parseFloat(d.iss_position.latitude), lng: parseFloat(d.iss_position.longitude), velocity: null };
-      }
+      return { lat: parseFloat(d.latitude), lng: parseFloat(d.longitude), velocity: d.velocity };
     } catch { /* try next */ }
   }
   return null;
@@ -226,7 +211,8 @@ async function fetchAstrosWithFallback() {
     try {
       const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
       if (!r.ok) continue;
-      return await r.json();
+      const d = await r.json();
+      return d;
     } catch { /* try next */ }
   }
   return null;
@@ -317,8 +303,9 @@ async function fetchISS() {
 async function fetchAstros() {
   try {
     const data = await fetchAstrosWithFallback();
-    if (!data) throw new Error('All astronaut APIs failed');
-    document.getElementById('people-count').textContent = data.number;
+    if (!data || !data.people) throw new Error('All astronaut APIs failed');
+    const num = data.number || data.people.length;
+    document.getElementById('people-count').textContent = num;
     const list = document.getElementById('people-list');
     list.innerHTML = '';
     data.people.forEach(p => {
