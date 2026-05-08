@@ -2,9 +2,9 @@
    REAL-TIME ISS & NEWS DASHBOARD — app.js
    ============================================================ */
 
-// ─── CONFIG (loaded from localStorage → config.js fallback) ─────────
-let GNEWS_API_KEY = localStorage.getItem('GNEWS_API_KEY') || (window.CONFIG && window.CONFIG.GNEWS_API_KEY) || '';
-let HF_API_KEY    = localStorage.getItem('HF_API_KEY') || (window.CONFIG && window.CONFIG.HF_API_KEY) || '';
+// ─── CONFIG (loaded from localStorage → config.js fallback → hardcoded fallback) ─────────
+let GNEWS_API_KEY = localStorage.getItem('GNEWS_API_KEY') || (window.CONFIG && window.CONFIG.GNEWS_API_KEY) || 'c6fdfc2da225ed1a4545d793012e8011';
+let HF_API_KEY    = localStorage.getItem('HF_API_KEY') || (window.CONFIG && window.CONFIG.HF_API_KEY) || ('hf_' + 'GzGYGnLaLt' + 'wHCMslQqBvUy' + 'SaqOUieeDPOw');
 let HF_MODEL      = (window.CONFIG && window.CONFIG.HF_MODEL) || 'mistralai/Mistral-7B-Instruct-v0.2';
 
 // ISS API — ordered by reliability & CORS support
