@@ -222,11 +222,36 @@ async function fetchAstrosWithFallback() {
 const ISS_TYPICAL_SPEED_KMH = 27600;
 
 // ─── FETCH ISS POSITION ──────────────────────────────────────
+let isSimulating = false;
 async function fetchISS() {
   try {
     const fetchStartMs = Date.now();
-    const data = await fetchISSWithFallback();
-    if (!data) throw new Error('All ISS APIs failed');
+    let data = await fetchISSWithFallback();
+    
+    if (!data) {
+      if (!lastIssData) {
+        // Seed a starting position if rate limited on very first load
+        lastIssData = { lat: 20, lng: 0, ts: (fetchStartMs / 1000) - 15 };
+      }
+      
+      // Dead Reckoning fallback: simulate movement if API is rate-limited (429)
+      data = {
+        lat: lastIssData.lat + (Math.random() * 0.02 - 0.01),
+        lng: lastIssData.lng + 0.8, // roughly 15s of eastward movement
+        velocity: lastKnownSpeed || ISS_TYPICAL_SPEED_KMH
+      };
+      if (data.lng > 180) data.lng -= 360;
+      if (!isSimulating) {
+        toast('API Rate Limit: Temporarily simulating position', 'warn');
+        isSimulating = true;
+      }
+    } else {
+      if (isSimulating) {
+        toast('API Restored: Resuming live tracking', 'success');
+        isSimulating = false;
+      }
+    }
+
     const { lat, lng, velocity } = data;
     const ts = fetchStartMs / 1000;  // wall-clock seconds
 
