@@ -1,0 +1,9 @@
+# API keys — never commit these
+.env
+config.js
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo

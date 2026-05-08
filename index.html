@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Real-Time ISS & News Dashboard</title>
+  <meta name="description" content="Live ISS tracking, latest news, and AI chatbot dashboard." />
+
+  <!-- Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+
+  <!-- Main CSS -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Toast Container -->
+  <div id="toast-container"></div>
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="header-left">
+      <div class="header-badge">MISSION CONTROL</div>
+      <h1 class="header-title">Real-Time ISS &amp; News Dashboard</h1>
+    </div>
+    <div class="header-right">
+      <button id="theme-toggle" class="btn btn-outline" title="Toggle dark/light mode">
+        <span id="theme-icon">☀️</span> <span id="theme-label">Light Mode</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN LAYOUT -->
+  <main class="dashboard">
+
+    <!-- LEFT COLUMN: ISS + News -->
+    <div class="col-main">
+
+      <!-- ISS TRACKING CARD -->
+      <section class="card" id="iss-section">
+        <div class="card-header">
+          <h2 class="card-title">🛰️ ISS Live Tracking</h2>
+          <div class="card-actions">
+            <button id="iss-refresh-btn" class="btn btn-sm">🔄 Refresh Now</button>
+            <button id="iss-auto-btn" class="btn btn-sm btn-active">Auto-Refresh: ON</button>
+          </div>
+        </div>
+
+        <!-- ISS Stats -->
+        <div class="stats-grid">
+          <div class="stat-box">
+            <div class="stat-label">Latitude / Longitude</div>
+            <div class="stat-value" id="iss-latlon">--</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Speed</div>
+            <div class="stat-value" id="iss-speed">-- km/h</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Nearest Place</div>
+            <div class="stat-value" id="iss-location">--</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Tracked Positions</div>
+            <div class="stat-value" id="iss-count">0</div>
+          </div>
+        </div>
+
+        <!-- Map -->
+        <div id="iss-map"></div>
+
+        <!-- People in Space -->
+        <div class="people-section">
+          <div class="people-header">
+            <span>👨‍🚀 People in Space:</span>
+            <span id="people-count" class="badge">--</span>
+          </div>
+          <div id="people-list" class="people-list">
+            <div class="skeleton-line"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- NEWS SECTION -->
+      <section class="card" id="news-section">
+        <div class="card-header">
+          <h2 class="card-title">📰 Breaking News</h2>
+          <button id="news-refresh-btn" class="btn btn-sm">🔄 Refresh</button>
+        </div>
+
+        <!-- Search + Sort -->
+        <div class="news-controls">
+          <input type="text" id="news-search" class="search-input" placeholder="Search title, source, author…" />
+          <select id="news-sort" class="sort-select">
+            <option value="date">Sort by Date</option>
+            <option value="source">Sort by Source</option>
+          </select>
+        </div>
+
+        <!-- Loading -->
+        <div id="news-loading" class="loading-wrap hidden">
+          <div class="spinner"></div><span>Fetching articles…</span>
+        </div>
+
+        <!-- Error -->
+        <div id="news-error" class="error-box hidden">
+          <span id="news-error-msg"></span>
+          <button class="btn btn-sm" onclick="fetchNews()">Retry</button>
+        </div>
+
+        <!-- Articles list -->
+        <div id="news-list"></div>
+      </section>
+
+    </div><!-- /col-main -->
+
+    <!-- RIGHT COLUMN: Charts -->
+    <div class="col-side">
+
+      <!-- ISS Speed Chart -->
+      <section class="card">
+        <h2 class="card-title">📈 ISS Speed Trend</h2>
+        <div class="chart-wrap">
+          <canvas id="speed-chart"></canvas>
+        </div>
+      </section>
+
+      <!-- News Distribution Chart -->
+      <section class="card">
+        <h2 class="card-title">🗂️ News Distribution</h2>
+        <div class="chart-wrap chart-wrap-pie">
+          <canvas id="news-chart"></canvas>
+        </div>
+      </section>
+
+    </div><!-- /col-side -->
+
+  </main>
+
+  <!-- CHATBOT FLOATING BUTTON -->
+  <button id="chat-toggle-btn" class="chat-fab" title="Open AI Assistant">
+    <span class="chat-fab-icon">💬</span>
+  </button>
+
+  <!-- CHATBOT WINDOW -->
+  <div id="chat-window" class="chat-window hidden">
+    <div class="chat-header">
+      <span>🤖 AI Assistant</span>
+      <div class="chat-header-actions">
+        <button id="chat-clear-btn" class="btn btn-xs">Clear</button>
+        <button id="chat-close-btn" class="btn btn-xs">✕</button>
+      </div>
+    </div>
+    <div id="chat-messages" class="chat-messages"></div>
+    <div id="chat-typing" class="chat-typing hidden"><span></span><span></span><span></span></div>
+    <div class="chat-input-row">
+      <input type="text" id="chat-input" class="chat-input" placeholder="Ask about ISS or news…" />
+      <button id="chat-send-btn" class="btn btn-primary">Send</button>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
