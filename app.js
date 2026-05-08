@@ -2,30 +2,30 @@
    REAL-TIME ISS & NEWS DASHBOARD — app.js
    ============================================================ */
 
-// ─── CONFIG (loaded from config.js → window.CONFIG) ─────────
-const GNEWS_API_KEY = window.CONFIG.GNEWS_API_KEY;
-const HF_API_KEY    = window.CONFIG.HF_API_KEY;
-const HF_MODEL      = window.CONFIG.HF_MODEL;
+// ─── CONFIG (loaded from localStorage → config.js fallback) ─────────
+let GNEWS_API_KEY = localStorage.getItem('GNEWS_API_KEY') || (window.CONFIG && window.CONFIG.GNEWS_API_KEY) || '';
+let HF_API_KEY    = localStorage.getItem('HF_API_KEY') || (window.CONFIG && window.CONFIG.HF_API_KEY) || '';
+let HF_MODEL      = (window.CONFIG && window.CONFIG.HF_MODEL) || 'mistralai/Mistral-7B-Instruct-v0.2';
 
-// ISS API with fallback chain
-// Route wheretheiss.at through corsproxy to avoid 429 rate limits from browser
+// ISS API — ordered by reliability & CORS support
+// open-notify via allorigins returns fresh lat/lng each call
 const ISS_APIS = [
   'https://api.wheretheiss.at/v1/satellites/25544',
-  'https://corsproxy.io/?' + encodeURIComponent('https://api.wheretheiss.at/v1/satellites/25544'),
-  'https://corsproxy.io/?' + encodeURIComponent('http://api.open-notify.org/iss-now.json'),
-  'https://api.allorigins.win/raw?url=' + encodeURIComponent('http://api.open-notify.org/iss-now.json')
+  'https://api.allorigins.win/raw?url=' + encodeURIComponent('http://api.open-notify.org/iss-now.json'),
+  'https://corsproxy.io/?' + encodeURIComponent('http://api.open-notify.org/iss-now.json')
 ];
 const ASTROS_APIS = [
-  'https://corsproxy.io/?' + encodeURIComponent('http://api.open-notify.org/astros.json'),
-  'https://api.allorigins.win/raw?url=' + encodeURIComponent('http://api.open-notify.org/astros.json')
+  'https://api.allorigins.win/raw?url=' + encodeURIComponent('http://api.open-notify.org/astros.json'),
+  'https://corsproxy.io/?' + encodeURIComponent('http://api.open-notify.org/astros.json')
 ];
 
 const NEWS_CACHE_KEY  = 'iss_news_cache';
 const NEWS_CACHE_TTL  = 15 * 60 * 1000; // 15 minutes
 const CHAT_STORE_KEY  = 'iss_chat_history';
 const MAX_CHAT_MSGS   = 30;
-const ISS_TRACK_MAX   = 15;
-const SPEED_HISTORY   = 30;
+const ISS_TRACK_MAX   = 15;    // last 15 positions shown on map path
+const SPEED_HISTORY   = 30;    // last 30 speed readings for chart
+const ISS_POLL_MS     = 15000; // 15s — matches wheretheiss.at rate limit
 
 // ─── STATE ───────────────────────────────────────────────────
 let issPositions   = [];
@@ -59,9 +59,58 @@ document.getElementById('theme-toggle').addEventListener('click', () => {
 });
 
 function updateThemeBtn(theme) {
-  document.getElementById('theme-icon').textContent  = theme === 'dark' ? '☀️' : '🌙';
-  document.getElementById('theme-label').textContent = theme === 'dark' ? 'Light Mode' : 'Dark Mode';
+  const icon = document.getElementById('theme-icon');
+  const label = document.getElementById('theme-label');
+  if (theme === 'dark') {
+    icon.textContent = '☀️';
+    label.textContent = 'Light Mode';
+  } else {
+    icon.textContent = '🌙';
+    label.textContent = 'Dark Mode';
+  }
 }
+
+// ─── SETTINGS MODAL ──────────────────────────────────────────
+const settingsModal = document.getElementById('settings-modal');
+const settingsBtn = document.getElementById('settings-btn');
+const settingsCloseBtn = document.getElementById('settings-close-btn');
+const settingsSaveBtn = document.getElementById('settings-save-btn');
+const gnewsKeyInput = document.getElementById('gnews-key-input');
+const hfKeyInput = document.getElementById('hf-key-input');
+
+function openSettings() {
+  gnewsKeyInput.value = GNEWS_API_KEY;
+  hfKeyInput.value = HF_API_KEY;
+  settingsModal.classList.remove('hidden');
+}
+
+function closeSettings() {
+  settingsModal.classList.add('hidden');
+}
+
+function saveSettings() {
+  const gkey = gnewsKeyInput.value.trim();
+  const hkey = hfKeyInput.value.trim();
+  
+  if (gkey) {
+    localStorage.setItem('GNEWS_API_KEY', gkey);
+    GNEWS_API_KEY = gkey;
+  }
+  if (hkey) {
+    localStorage.setItem('HF_API_KEY', hkey);
+    HF_API_KEY = hkey;
+  }
+  
+  closeSettings();
+  toast('Settings saved successfully!', 'success');
+  
+  // Optionally re-fetch news if we just added the key
+  if (GNEWS_API_KEY && allArticles.length === 0) fetchNews();
+}
+
+settingsBtn.addEventListener('click', openSettings);
+settingsCloseBtn.addEventListener('click', closeSettings);
+settingsSaveBtn.addEventListener('click', saveSettings);
 
 // ─── TOAST ───────────────────────────────────────────────────
 function toast(msg, type = 'info') {
@@ -100,19 +149,27 @@ function initMap() {
   }).addTo(issMap);
 
   // Custom ISS icon — satellite emoji with glow
+  // Make the icon a larger clickable area so mouseover fires reliably
   const issIcon = L.divIcon({
-    html: '<div style="font-size:30px;line-height:1;filter:drop-shadow(0 0 10px #ff6b35) drop-shadow(0 0 4px #fff);">🛰️</div>',
+    html: '<div style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:30px;filter:drop-shadow(0 0 10px #ff6b35) drop-shadow(0 0 4px #fff);">\uD83D\uDEF0\uFE0F</div>',
     className: '',
-    iconSize: [34, 34],
-    iconAnchor: [17, 17]
+    iconSize: [44, 44],
+    iconAnchor: [22, 22]
   });
 
   issMarker = L.marker([20, 0], { icon: issIcon }).addTo(issMap);
 
-  // Show popup on hover (mouseover), hide on mouseout — like reference screenshot
-  issMarker.bindPopup('Loading ISS data…', { autoClose: false, closeOnClick: false });
-  issMarker.on('mouseover', function() { this.openPopup(); });
-  issMarker.on('mouseout',  function() { this.closePopup(); });
+  // Hover popup — show on mouseover, hide on mouseout
+  issMarker.bindPopup('Loading ISS data…', {
+    autoClose: false,
+    closeOnClick: false,
+    offset: [0, -22]   // push popup above the icon centre
+  });
+  issMarker.on('mouseover', function(e) { this.openPopup(); });
+  issMarker.on('mouseout',  function(e) {
+    // Small delay so popup doesn't flash when moving slightly off icon
+    setTimeout(() => { if (!this.isPopupOpen()) return; this.closePopup(); }, 200);
+  });
 
   // Red trajectory line to match reference screenshot
   issPolyline = L.polyline([], { color: '#e63946', weight: 2, opacity: 0.8, dashArray: '6,4' }).addTo(issMap);
@@ -122,8 +179,14 @@ function initMap() {
 async function getNearestPlace(lat, lng) {
   try {
     const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=5`;
-    const r = await fetch(url, { headers: { 'Accept-Language': 'en' } });
-    if (!r.ok) throw new Error();
+    const r = await fetch(url, {
+      headers: {
+        'Accept-Language': 'en',
+        'User-Agent': 'ISS-Dashboard/1.0 (educational project)'
+      },
+      signal: AbortSignal.timeout(6000)
+    });
+    if (!r.ok) throw new Error('Nominatim ' + r.status);
     const d = await r.json();
     const addr = d.address || {};
     return addr.country || addr.state || addr.county || addr.city || 'Over ocean / remote area';
@@ -133,7 +196,14 @@ async function getNearestPlace(lat, lng) {
 }
 
 async function fetchISSWithFallback() {
-  for (const url of ISS_APIS) {
+  const ts = Date.now();
+  // Append cache-busting timestamp to proxies to ensure fresh coordinates
+  const dynamicApis = [
+    'https://api.wheretheiss.at/v1/satellites/25544',
+    `https://api.allorigins.win/raw?url=${encodeURIComponent('http://api.open-notify.org/iss-now.json?t=' + ts)}`,
+    `https://corsproxy.io/?${encodeURIComponent('http://api.open-notify.org/iss-now.json?t=' + ts)}`
+  ];
+  for (const url of dynamicApis) {
     try {
       const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
       if (!r.ok) continue;
@@ -141,10 +211,10 @@ async function fetchISSWithFallback() {
       // Normalize both API response formats
       if (d.latitude !== undefined) {
         // wheretheiss.at format
-        return { lat: parseFloat(d.latitude), lng: parseFloat(d.longitude), ts: d.timestamp ?? Math.floor(Date.now()/1000), velocity: d.velocity };
+        return { lat: parseFloat(d.latitude), lng: parseFloat(d.longitude), velocity: d.velocity };
       } else if (d.iss_position) {
         // open-notify format
-        return { lat: parseFloat(d.iss_position.latitude), lng: parseFloat(d.iss_position.longitude), ts: d.timestamp, velocity: null };
+        return { lat: parseFloat(d.iss_position.latitude), lng: parseFloat(d.iss_position.longitude), velocity: null };
       }
     } catch { /* try next */ }
   }
@@ -162,33 +232,33 @@ async function fetchAstrosWithFallback() {
   return null;
 }
 
-// ISS typical orbital speed constant — used as seed on very first fetch
+// ISS typical orbital speed — used as seed when no previous data
 const ISS_TYPICAL_SPEED_KMH = 27600;
 
 // ─── FETCH ISS POSITION ──────────────────────────────────────
 async function fetchISS() {
   try {
+    const fetchStartMs = Date.now();
     const data = await fetchISSWithFallback();
     if (!data) throw new Error('All ISS APIs failed');
-    const { lat, lng, ts } = data;
-    // NOTE: We intentionally ignore data.velocity (constant API value).
-    // Haversine between consecutive positions gives natural fluctuation
-    // that matches the reference screenshot's speed graph behaviour.
+    const { lat, lng, velocity } = data;
+    const ts = fetchStartMs / 1000;  // wall-clock seconds
 
     const newPos = { lat, lng, ts };
 
-    // ── SPEED via Haversine ────────────────────────────────────
-    // On first fetch: no previous position → seed with ISS typical speed
-    // On subsequent fetches: calculate actual ground-track speed between
-    // the last two GPS samples. This naturally fluctuates ±200-500 km/h
-    // as the ISS sweeps different latitudes along its 51.6° inclined orbit.
+    // ── SPEED ────────────────────────────────────────────────
+    // If wheretheiss.at responded: use its velocity (km/h).
+    // It changes each orbit pass due to atmospheric drag, gravity
+    // variations — gives real fluctuation like the reference graph.
+    // If fallback (open-notify, no velocity): compute via Haversine.
     let speed;
-    if (lastIssData) {
-      const timeDiff = ts - lastIssData.ts;   // seconds between fetches
-      if (timeDiff > 0) {
+    if (velocity !== null && velocity !== undefined) {
+      speed = parseFloat(velocity);
+    } else if (lastIssData) {
+      const timeDiff = ts - lastIssData.ts;
+      if (timeDiff > 2) {
         speed = calculateSpeed(lastIssData, newPos, timeDiff);
-        // Light sanity-cap: Haversine can spike on wrap-around meridian cross
-        if (speed < 1000 || speed > 35000) speed = lastKnownSpeed || ISS_TYPICAL_SPEED_KMH;
+        if (speed < 5000 || speed > 35000) speed = lastKnownSpeed || ISS_TYPICAL_SPEED_KMH;
       } else {
         speed = lastKnownSpeed || ISS_TYPICAL_SPEED_KMH;
       }
@@ -202,9 +272,9 @@ async function fetchISS() {
     issPositions.push(newPos);
     if (issPositions.length > ISS_TRACK_MAX) issPositions.shift();
 
-    // Speed history (max 30) — real fluctuating values for chart
+    // Speed history for chart — push every call
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    speedHistory.push(Math.round(speed));
+    speedHistory.push(parseFloat(speed.toFixed(2)));
     speedTimestamps.push(now);
     if (speedHistory.length > SPEED_HISTORY) { speedHistory.shift(); speedTimestamps.shift(); }
 
@@ -213,10 +283,10 @@ async function fetchISS() {
     document.getElementById('iss-speed').textContent  = `${speed.toFixed(2)} km/h`;
     document.getElementById('iss-count').textContent  = issPositions.length;
 
-    // Move satellite marker and update hover popup content
+    // Move satellite marker
     issMarker.setLatLng([lat, lng]);
     issMarker.setPopupContent(
-      `<b>ISS Current Position</b><br>${lat.toFixed(3)}, ${lng.toFixed(3)}<br><span id="popup-place">Locating…</span>`
+      `<b>ISS Current Position</b><br>${lat.toFixed(3)}, ${lng.toFixed(3)}<br><em id="popup-place">Locating…</em>`
     );
 
     const latlngs = issPositions.map(p => [p.lat, p.lng]);
@@ -225,10 +295,10 @@ async function fetchISS() {
     // Pan map to follow ISS
     issMap.panTo([lat, lng], { animate: true, duration: 1.0 });
 
-    // Speed chart updates with real fluctuating speed values
+    // Update chart
     updateSpeedChart();
 
-    // Reverse-geocode async (doesn't block the above)
+    // Reverse-geocode async
     getNearestPlace(lat, lng).then(place => {
       document.getElementById('iss-location').textContent = place;
       // Update the popup location text if it's open
@@ -266,8 +336,7 @@ async function fetchAstros() {
 
 // ─── ISS AUTO REFRESH CONTROLS ───────────────────────────────
 function startIssAutoRefresh() {
-  fetchISS();
-  issInterval = setInterval(fetchISS, 15000);
+  issInterval = setInterval(fetchISS, 5000);
 }
 function stopIssAutoRefresh() {
   clearInterval(issInterval);
@@ -706,6 +775,11 @@ ${dashCtx}`;
 
 // ─── INIT ─────────────────────────────────────────────────────
 async function init() {
+  // Show settings automatically if keys are missing
+  if (!GNEWS_API_KEY || !HF_API_KEY) {
+    openSettings();
+  }
+
   initMap();
   initSpeedChart();
   initNewsChart();
@@ -713,11 +787,13 @@ async function init() {
   // First ISS fetch + astronauts (in parallel)
   await Promise.allSettled([fetchISS(), fetchAstros()]);
 
-  // Start auto-refresh interval (15s, does NOT fetch immediately since we just fetched)
-  issInterval = setInterval(fetchISS, 15000);
+  // Poll ISS every 15 seconds for fresh positions → Haversine speed fluctuates naturally
+  issInterval = setInterval(fetchISS, ISS_POLL_MS);
 
   // News
-  await fetchNews();
+  if (GNEWS_API_KEY) {
+    await fetchNews();
+  }
 
   // Welcome chatbot message
   if (chatMessages.length === 0) {

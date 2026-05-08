@@ -87,6 +87,11 @@ body {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 
 /* ==============================
    LAYOUT
@@ -285,6 +290,36 @@ body {
   border-color: var(--primary);
   transform: translateY(-2px);
   box-shadow: 0 6px 20px var(--primary-glow);
+}
+
+/* ─── MODAL ────────────────────────────────────────────── */
+.modal {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+  display: flex; justify-content: center; align-items: center;
+  z-index: 10000;
+}
+.modal.hidden { display: none; }
+.modal-content {
+  background: var(--bg-card); width: 90%; max-width: 400px;
+  border-radius: 12px; padding: 1.5rem;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  border: 1px solid var(--border-color);
+  animation: slideUp 0.3s ease;
+}
+.modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 1rem;
+}
+.modal-header h2 { font-size: 1.25rem; font-weight: 600; }
+.modal-body p { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem; }
+.form-group { margin-bottom: 1rem; }
+.form-group label { display: block; font-size: 0.85rem; margin-bottom: 0.4rem; color: var(--text-muted); }
+.modal-footer { display: flex; justify-content: flex-end; margin-top: 1.5rem; }
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 .article-img {
   width: 80px;
