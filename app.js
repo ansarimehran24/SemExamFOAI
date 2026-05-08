@@ -235,10 +235,11 @@ async function fetchISS() {
       }
       
       // Dead Reckoning fallback: simulate movement if API is rate-limited (429)
+      const simulatedSpeed = (lastKnownSpeed || ISS_TYPICAL_SPEED_KMH) + (Math.random() * 20 - 10);
       data = {
         lat: lastIssData.lat + (Math.random() * 0.02 - 0.01),
         lng: lastIssData.lng + 0.8, // roughly 15s of eastward movement
-        velocity: lastKnownSpeed || ISS_TYPICAL_SPEED_KMH
+        velocity: simulatedSpeed
       };
       if (data.lng > 180) data.lng -= 360;
       if (!isSimulating) {
@@ -500,12 +501,21 @@ async function fetchNews() {
   list.innerHTML = '';
 
   try {
-    // Single request to avoid 429 rate limiting
-    const url = `https://gnews.io/api/v4/search?q=latest+news&lang=en&country=us&max=10&apikey=${GNEWS_API_KEY}`;
+    // Single request to public CORS-friendly NewsAPI mirror
+    const url = `https://saurav.tech/NewsAPI/top-headlines/category/general/us.json`;
     const r = await fetch(url);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const d = await r.json();
-    const articles = (d.articles || []).map(a => ({ ...a, _category: classifyArticle(a) }));
+    const articles = (d.articles || []).map(a => ({ 
+      title: a.title,
+      description: a.description,
+      content: a.content,
+      url: a.url,
+      image: a.urlToImage,
+      publishedAt: a.publishedAt,
+      source: { name: a.source.name },
+      _category: classifyArticle(a)
+    }));
     if (!articles.length) throw new Error('No articles returned');
 
     articles.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
